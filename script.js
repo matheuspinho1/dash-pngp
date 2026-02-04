@@ -1,9 +1,3 @@
-/**
- * PNGP Dashboard - Versão Executiva Final Integrada
- * Correção: Funções de tabela (toggleTable, renderTable) restauradas.
- * Exportação: Gráficos com títulos, KPIs completos e Colunas A-R limpas.
- */
-
 Chart.register(ChartDataLabels);
 
 let database = { port: [], mat: [] };
@@ -393,3 +387,4 @@ async function createDashboardSheet(wb, portData, matData, imgs, ufNome) {
     ws.addImage(wb.addImage({ base64: imgs.statusPort, extension: 'png' }), { tl: { col: 0, row: curRow - 1 }, ext: { width: 500, height: 350 } });
     ws.addImage(wb.addImage({ base64: imgs.statusMat, extension: 'png' }), { tl: { col: 5, row: curRow - 1 }, ext: { width: 500, height: 350 } });
 }
+

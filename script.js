@@ -1,6 +1,7 @@
 /**
- * PNGP Dashboard Pro - Com Gráficos Nativos no Excel
- * @author Claude Enhanced with ExcelJS
+ * PNGP Dashboard - Versão Executiva Final Integrada
+ * Correção: Funções de tabela (toggleTable, renderTable) restauradas.
+ * Exportação: Gráficos com títulos, KPIs completos e Colunas A-R limpas.
  */
 
 Chart.register(ChartDataLabels);
@@ -12,12 +13,14 @@ let currentPage = 1;
 const rowsPerPage = 20;
 
 const COLORS = {
-    concluido: '#10b981',
-    naoConcluido: '#ef4444',
+    concluido: '#004a8d',
+    naoConcluido: '#f7941d',
     naoIniciado: '#f6be00',
     portugues: '#004a8d',
     matematica: '#f7941d'
 };
+
+// --- PROCESSAMENTO DE DADOS ---
 
 async function processData() {
     const inputs = {
@@ -59,6 +62,7 @@ function mergeData(prog, geral) {
         return {
             ...row,
             uf: info ? info['UF Residência'] || 'Não Informado' : 'Não Informado',
+            cidade: info ? info['Cidade'] || 'Não Informado' : 'Não Informado',
             idade: info ? calculateAge(info['Data de nascimento']) : 0
         };
     });
@@ -67,7 +71,7 @@ function mergeData(prog, geral) {
 function calculateAge(dateStr) {
     if (!dateStr) return 0;
     const birth = new Date(dateStr);
-    const age = new Date().getFullYear() - birth.getFullYear();
+    const age = 2026 - birth.getFullYear(); 
     return isNaN(age) ? 0 : age;
 }
 
@@ -80,15 +84,11 @@ function readExcel(file) {
             const ws = wb.worksheets[0];
             const data = [];
             const headers = [];
-            
             ws.getRow(1).eachCell(cell => headers.push(cell.value));
-            
             for (let i = 2; i <= ws.rowCount; i++) {
                 const row = ws.getRow(i);
                 const obj = {};
-                headers.forEach((header, idx) => {
-                    obj[header] = row.getCell(idx + 1).value;
-                });
+                headers.forEach((header, idx) => { obj[header] = row.getCell(idx + 1).value; });
                 if (obj[headers[0]]) data.push(obj);
             }
             resolve(data);
@@ -96,6 +96,8 @@ function readExcel(file) {
         reader.readAsArrayBuffer(file);
     });
 }
+
+// --- CONTROLE DA INTERFACE (HTML) ---
 
 function initDashboard() {
     document.getElementById('dashContent').classList.remove('hidden');
@@ -140,7 +142,6 @@ function renderTable() {
     const totalPages = Math.ceil(filtered.length / rowsPerPage);
     const start = (currentPage - 1) * rowsPerPage;
     const pageData = filtered.slice(start, start + rowsPerPage);
-
     const units = ["Teste inicial", "Unidade 1", "Unidade 2", "Unidade 3", "Unidade 4", "Unidade 5"];
 
     document.getElementById('dataTableBody').innerHTML = pageData.map(d => `
@@ -148,21 +149,16 @@ function renderTable() {
             <td class="font-bold text-slate-900">${d.Nome}</td>
             <td class="text-xs text-slate-500">${d['Endereço de e-mail']}</td>
             <td class="text-center text-[#004a8d] font-bold">${d.uf}</td>
+            <td class="text-center text-slate-600 font-medium">${d.cidade}</td>
             <td class="text-center font-bold">${d.idade}</td>
-            
             ${units.map(u => {
                 const dateKey = `${u} - Data de conclusão`;
                 const dateValue = d[dateKey] ? d[dateKey].split(' ')[0] : '-';
-                return `
-                    <td>${d[u] || 'Não iniciado'}</td>
-                    <td class="text-[11px] text-slate-400 font-medium">${dateValue}</td>
-                `;
+                return `<td>${d[u] || 'Não iniciado'}</td><td class="text-[11px] text-slate-400 font-medium">${dateValue}</td>`;
             }).join('')}
-            
             <td class="font-bold text-[#004a8d]">${d['Curso concluído'] ? 'Concluído' : 'Pendente'}</td>
         </tr>
     `).join('');
-
     document.getElementById('pageLabel').innerText = `Página ${currentPage} de ${totalPages || 1} | ${filtered.length} registros encontrados`;
 }
 
@@ -181,40 +177,24 @@ function nextPage() {
     const filtered = (currentMateria === 'PORT' ? database.port : database.mat)
         .filter(d => uf === "ALL" || d.uf === uf)
         .filter(d => d.Nome.toLowerCase().includes(search) || d['Endereço de e-mail'].toLowerCase().includes(search));
-    
     if (currentPage * rowsPerPage < filtered.length) { currentPage++; renderTable(); } 
 }
 
+// --- GRÁFICOS ---
+
 function renderCharts(port, mat) {
     const uts = ["Teste inicial", "Unidade 1", "Unidade 2", "Unidade 3", "Unidade 4", "Unidade 5"];
-    Object.values(charts).forEach(c => c.destroy());
-
-    charts.ut = new Chart(document.getElementById('chartUT'), {
-        type: 'bar',
-        data: {
-            labels: uts,
-            datasets: [
-                { label: 'Português', data: uts.map(u => countUT(port, u)), backgroundColor: COLORS.portugues },
-                { label: 'Matemática', data: uts.map(u => countUT(mat, u)), backgroundColor: COLORS.matematica }
-            ]
-        },
-        options: { 
-            responsive: true, maintainAspectRatio: false,
-            plugins: { datalabels: { anchor: 'end', align: 'top', font: { weight: 'bold', size: 12 } } }
-        }
-    });
+    Object.values(charts).forEach(c => { if(c) c.destroy(); });
 
     const getStats = (data) => {
-        const res = { "Concluído": 0, "Não concluído": 0, "Não iniciado": 0 };
+        const res = { "Concluído": 0, "Não concluído": 0 };
         data.forEach(r => uts.forEach(u => { if(res[r[u]] !== undefined) res[r[u]]++; }));
         return res;
     };
 
-    const sP = getStats(port);
-    const sM = getStats(mat);
-
     const pieOptions = {
         responsive: true, maintainAspectRatio: false,
+        animation: false,
         plugins: { 
             datalabels: { 
                 color: '#fff', font: { weight: 'bold', size: 12 },
@@ -228,12 +208,12 @@ function renderCharts(port, mat) {
 
     charts.pPort = new Chart(document.getElementById('piePort'), {
         type: 'pie',
-        data: { labels: Object.keys(sP), datasets: [{ data: Object.values(sP), backgroundColor: [COLORS.concluido, COLORS.naoConcluido, COLORS.naoIniciado] }]},
+        data: { labels: Object.keys(getStats(port)), datasets: [{ data: Object.values(getStats(port)), backgroundColor: [COLORS.concluido, COLORS.naoConcluido] }]},
         options: pieOptions
     });
     charts.pMat = new Chart(document.getElementById('pieMat'), {
         type: 'pie',
-        data: { labels: Object.keys(sM), datasets: [{ data: Object.values(sM), backgroundColor: [COLORS.concluido, COLORS.naoConcluido, COLORS.naoIniciado] }]},
+        data: { labels: Object.keys(getStats(mat)), datasets: [{ data: Object.values(getStats(mat)), backgroundColor: [COLORS.concluido, COLORS.naoConcluido] }]},
         options: pieOptions
     });
 
@@ -243,12 +223,12 @@ function renderCharts(port, mat) {
             labels: uts,
             datasets: [
                 { label: 'Concluído', data: uts.map(u => data.filter(d => d[u] === 'Concluído').length), backgroundColor: COLORS.concluido },
-                { label: 'Não Concluído', data: uts.map(u => data.filter(d => d[u] === 'Não concluído').length), backgroundColor: COLORS.naoConcluido },
-                { label: 'Não Iniciado', data: uts.map(u => data.filter(d => (d[u] || 'Não iniciado') === 'Não iniciado').length), backgroundColor: COLORS.naoIniciado }
+                { label: 'Não Concluído', data: uts.map(u => data.filter(d => d[u] === 'Não concluído').length), backgroundColor: COLORS.naoConcluido }
             ]
         },
         options: { 
             responsive: true, maintainAspectRatio: false,
+            animation: false,
             scales: { x: { stacked: true }, y: { stacked: true } },
             plugins: { datalabels: { color: '#fff', font: { size: 11, weight: 'bold' } } }
         }
@@ -258,311 +238,158 @@ function renderCharts(port, mat) {
     charts.sMat = createStack('statusMat', mat);
 }
 
-function countUT(data, ut) { return data.filter(d => d[ut] && d[ut] !== "Não iniciado").length; }
+// --- EXPORTAÇÃO EXECUTIVA PARA EXCEL ---
 
-/**
- * ========================================
- * EXPORTAÇÃO PARA EXCEL COM GRÁFICOS NATIVOS
- * ========================================
- */
 async function exportToExcel() {
     const uf = document.getElementById('filterUF').value;
-    const search = document.getElementById('tableSearch').value.toLowerCase();
     const filter = d => uf === "ALL" || d.uf === uf;
-    
-    const fPort = database.port.filter(filter).filter(d => 
-        d.Nome.toLowerCase().includes(search) || d['Endereço de e-mail'].toLowerCase().includes(search)
-    );
-    const fMat = database.mat.filter(filter).filter(d => 
-        d.Nome.toLowerCase().includes(search) || d['Endereço de e-mail'].toLowerCase().includes(search)
-    );
+    const fPort = database.port.filter(filter);
+    const fMat = database.mat.filter(filter);
+
+    const chartImages = {
+        piePort: charts.pPort.toBase64Image(),
+        pieMat: charts.pMat.toBase64Image(),
+        statusPort: charts.sPort.toBase64Image(),
+        statusMat: charts.sMat.toBase64Image()
+    };
 
     const wb = new ExcelJS.Workbook();
     wb.creator = 'PNGP Analytics';
-    wb.created = new Date();
     
-    // ABA 1: PORTUGUÊS
     await createTableSheet(wb, 'Português', fPort);
-    
-    // ABA 2: MATEMÁTICA
     await createTableSheet(wb, 'Matemática', fMat);
+    await createDashboardSheet(wb, fPort, fMat, chartImages, uf);
     
-    // ABA 3: DASHBOARD COM GRÁFICOS
-    await createDashboardSheet(wb, fPort, fMat);
-    
-    // Gera e baixa o arquivo
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `PNGP_Analytics_${uf === 'ALL' ? 'Brasil' : uf}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.download = `PNGP_Analytics_${uf === 'ALL' ? 'Brasil' : uf}_2026.xlsx`;
     a.click();
-    window.URL.revokeObjectURL(url);
 }
 
 async function createTableSheet(wb, sheetName, data) {
     const ws = wb.addWorksheet(sheetName);
     const units = ["Teste inicial", "Unidade 1", "Unidade 2", "Unidade 3", "Unidade 4", "Unidade 5"];
     
-    // Cabeçalhos
-    const headers = ['Nome', 'E-mail', 'UF', 'Idade'];
-    units.forEach(u => {
-        headers.push(u);
-        headers.push(`${u} - Data`);
+    ws.columns = [
+        { header: 'Nome', key: 'nome', width: 35 },
+        { header: 'E-mail', key: 'email', width: 40 },
+        { header: 'UF', key: 'uf', width: 10 },
+        { header: 'Cidade', key: 'cidade', width: 25 },
+        { header: 'Idade', key: 'idade', width: 10 },
+        { header: 'Teste inicial', key: 'ti', width: 18 },
+        { header: 'TI - Data', key: 'ti_d', width: 15 },
+        { header: 'Unidade 1', key: 'u1', width: 18 },
+        { header: 'U1 - Data', key: 'u1_d', width: 15 },
+        { header: 'Unidade 2', key: 'u2', width: 18 },
+        { header: 'U2 - Data', key: 'u2_d', width: 15 },
+        { header: 'Unidade 3', key: 'u3', width: 18 },
+        { header: 'U3 - Data', key: 'u3_d', width: 15 },
+        { header: 'Unidade 4', key: 'u4', width: 18 },
+        { header: 'U4 - Data', key: 'u4_d', width: 15 },
+        { header: 'Unidade 5', key: 'u5', width: 18 },
+        { header: 'U5 - Data', key: 'u5_d', width: 15 },
+        { header: 'Status Geral', key: 'status', width: 20 }
+    ];
+
+    const headerRow = ws.getRow(1);
+    headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF004a8d' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
-    headers.push('Status Geral');
-    
-    ws.addRow(headers);
-    
-    // Estilizar cabeçalho
-    ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    ws.getRow(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF004a8d' }
-    };
-    ws.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getRow(1).height = 25;
-    
-    // Dados
+
     data.forEach(row => {
-        const rowData = [
-            row.Nome,
-            row['Endereço de e-mail'],
-            row.uf,
-            row.idade
-        ];
-        
+        const rowData = [row.Nome, row['Endereço de e-mail'], row.uf, row.cidade, row.idade];
         units.forEach(u => {
             rowData.push(row[u] || 'Não iniciado');
             const dateKey = `${u} - Data de conclusão`;
             rowData.push(row[dateKey] ? row[dateKey].split(' ')[0] : '-');
         });
-        
         rowData.push(row['Curso concluído'] ? 'Concluído' : 'Pendente');
         ws.addRow(rowData);
     });
-    
-    // Larguras das colunas
-    ws.getColumn(1).width = 35; // Nome
-    ws.getColumn(2).width = 40; // E-mail
-    ws.getColumn(3).width = 8;  // UF
-    ws.getColumn(4).width = 10; // Idade
-    for (let i = 5; i <= 16; i++) {
-        ws.getColumn(i).width = 15;
-    }
-    ws.getColumn(17).width = 18; // Status Geral
-    
-    // Bordas e cores alternadas
+
     for (let i = 2; i <= ws.rowCount; i++) {
-        ws.getRow(i).eachCell(cell => {
-            cell.border = {
-                top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-                bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }
-            };
+        const row = ws.getRow(i);
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            if (colNumber <= 18) {
+                cell.border = { top: { style: 'thin', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
+                if (i % 2 === 0) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+            }
         });
-        if (i % 2 === 0) {
-            ws.getRow(i).fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FFF8FAFC' }
-            };
-        }
     }
 }
 
-async function createDashboardSheet(wb, portData, matData) {
+async function createDashboardSheet(wb, portData, matData, imgs, ufNome) {
     const ws = wb.addWorksheet('Dashboard');
-    const uts = ["Teste inicial", "Unidade 1", "Unidade 2", "Unidade 3", "Unidade 4", "Unidade 5"];
     
-    let currentRow = 1;
-    
-    // === SEÇÃO 1: KPIs ===
-    ws.mergeCells(`A${currentRow}:D${currentRow}`);
-    ws.getCell(`A${currentRow}`).value = 'INDICADORES PRINCIPAIS';
-    ws.getCell(`A${currentRow}`).font = { bold: true, size: 14, color: { argb: 'FF004a8d' } };
-    ws.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
-    currentRow += 2;
-    
-    ws.addRow(['Métrica', 'Português', 'Matemática', 'Total']);
-    ws.getRow(currentRow).font = { bold: true };
-    ws.getRow(currentRow).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFDBEAFE' }
-    };
-    currentRow++;
-    
-    ws.addRow(['Total de Alunos', portData.length, matData.length, portData.length + matData.length]);
-    currentRow++;
-    
+    ws.getColumn(1).width = 30; ws.getColumn(6).width = 30;
+    [2,3,4,7,8,9].forEach(c => ws.getColumn(c).width = 18);
+
+    ws.mergeCells('A1:I1');
+    const mainTitle = ws.getCell('A1');
+    mainTitle.value = `PNGP ANALYTICS - RELATÓRIO EXECUTIVO | ${ufNome === 'ALL' ? 'BRASIL' : ufNome}`;
+    mainTitle.font = { bold: true, size: 20, color: { argb: 'FF004A8D' } };
+    mainTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getRow(1).height = 45;
+
+    let curRow = 3;
+    ws.mergeCells(`A${curRow}:I${curRow}`);
+    ws.getCell(`A${curRow}`).value = 'RESUMO GERAL DE MÉTRICAS';
+    ws.getCell(`A${curRow}`).font = { bold: true, size: 12 };
+    ws.getCell(`A${curRow}`).alignment = { horizontal: 'center' };
+    curRow++;
+
+    const header = ws.addRow(['Métrica', 'Português', 'Matemática', 'Total Geral']);
+    header.eachCell(c => { c.font = { bold: true }; c.alignment = { horizontal: 'center' }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }; });
+    curRow++;
+
     const avgPort = (portData.reduce((acc, c) => acc + c.idade, 0) / (portData.length || 1)).toFixed(1);
     const avgMat = (matData.reduce((acc, c) => acc + c.idade, 0) / (matData.length || 1)).toFixed(1);
     const avgTotal = ((portData.reduce((acc, c) => acc + c.idade, 0) + matData.reduce((acc, c) => acc + c.idade, 0)) / ((portData.length + matData.length) || 1)).toFixed(1);
-    ws.addRow(['Média de Idade', avgPort, avgMat, avgTotal]);
-    currentRow += 2;
-    
-    // === SEÇÃO 2: ALUNOS POR UT ===
-    ws.mergeCells(`A${currentRow}:D${currentRow}`);
-    ws.getCell(`A${currentRow}`).value = 'ALUNOS POR UNIDADE DE TRABALHO';
-    ws.getCell(`A${currentRow}`).font = { bold: true, size: 14, color: { argb: 'FF004a8d' } };
-    ws.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
-    currentRow += 2;
-    
-    const utTableStart = currentRow;
-    ws.addRow(['Unidade', 'Português', 'Matemática', 'Total']);
-    ws.getRow(currentRow).font = { bold: true };
-    ws.getRow(currentRow).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFDBEAFE' }
-    };
-    currentRow++;
-    
-    uts.forEach(ut => {
-        const countPort = countUT(portData, ut);
-        const countMat = countUT(matData, ut);
-        ws.addRow([ut, countPort, countMat, countPort + countMat]);
-        currentRow++;
-    });
-    
-    // Dados prontos para criação manual de gráfico no Excel
-    
-    currentRow += 2;
-    
-    // === SEÇÃO 3: STATUS GERAL - PORTUGUÊS ===
-    ws.mergeCells(`A${currentRow}:D${currentRow}`);
-    ws.getCell(`A${currentRow}`).value = 'STATUS GERAL - PORTUGUÊS';
-    ws.getCell(`A${currentRow}`).font = { bold: true, size: 14, color: { argb: 'FF004a8d' } };
-    ws.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
-    currentRow += 2;
-    
-    const statsPort = getStatsForExcel(portData, uts);
-    const portPieStart = currentRow;
-    ws.addRow(['Status', 'Quantidade', 'Percentual']);
-    ws.getRow(currentRow).font = { bold: true };
-    ws.getRow(currentRow).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFDBEAFE' }
-    };
-    currentRow++;
-    
-    ws.addRow(['Concluído', statsPort['Concluído'], `${((statsPort['Concluído'] / (statsPort.total || 1)) * 100).toFixed(1)}%`]);
-    currentRow++;
-    ws.addRow(['Não Concluído', statsPort['Não concluído'], `${((statsPort['Não concluído'] / (statsPort.total || 1)) * 100).toFixed(1)}%`]);
-    currentRow++;
-    ws.addRow(['Não Iniciado', statsPort['Não iniciado'], `${((statsPort['Não iniciado'] / (statsPort.total || 1)) * 100).toFixed(1)}%`]);
-    currentRow++;
-    
-    // Dados prontos para criação manual de gráfico de pizza no Excel
-    
-    currentRow += 2;
-    
-    // === SEÇÃO 4: STATUS GERAL - MATEMÁTICA ===
-    ws.mergeCells(`A${currentRow}:D${currentRow}`);
-    ws.getCell(`A${currentRow}`).value = 'STATUS GERAL - MATEMÁTICA';
-    ws.getCell(`A${currentRow}`).font = { bold: true, size: 14, color: { argb: 'FFf7941d' } };
-    ws.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
-    currentRow += 2;
-    
-    const statsMat = getStatsForExcel(matData, uts);
-    const matPieStart = currentRow;
-    ws.addRow(['Status', 'Quantidade', 'Percentual']);
-    ws.getRow(currentRow).font = { bold: true };
-    ws.getRow(currentRow).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFDBEAFE' }
-    };
-    currentRow++;
-    
-    ws.addRow(['Concluído', statsMat['Concluído'], `${((statsMat['Concluído'] / (statsMat.total || 1)) * 100).toFixed(1)}%`]);
-    currentRow++;
-    ws.addRow(['Não Concluído', statsMat['Não concluído'], `${((statsMat['Não concluído'] / (statsMat.total || 1)) * 100).toFixed(1)}%`]);
-    currentRow++;
-    ws.addRow(['Não Iniciado', statsMat['Não iniciado'], `${((statsMat['Não iniciado'] / (statsMat.total || 1)) * 100).toFixed(1)}%`]);
-    currentRow++;
-    
-    // Dados prontos para criação manual de gráfico de pizza no Excel
-    
-    currentRow += 2;
-    
-    // === SEÇÃO 5: STATUS POR UT - PORTUGUÊS ===
-    ws.mergeCells(`A${currentRow}:E${currentRow}`);
-    ws.getCell(`A${currentRow}`).value = 'STATUS POR UNIDADE - PORTUGUÊS';
-    ws.getCell(`A${currentRow}`).font = { bold: true, size: 14, color: { argb: 'FF004a8d' } };
-    ws.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
-    currentRow += 2;
-    
-    const portStackStart = currentRow;
-    ws.addRow(['Unidade', 'Concluído', 'Não Concluído', 'Não Iniciado']);
-    ws.getRow(currentRow).font = { bold: true };
-    ws.getRow(currentRow).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFDBEAFE' }
-    };
-    currentRow++;
-    
-    uts.forEach(ut => {
-        const conc = portData.filter(d => d[ut] === 'Concluído').length;
-        const naoc = portData.filter(d => d[ut] === 'Não concluído').length;
-        const naoi = portData.filter(d => (d[ut] || 'Não iniciado') === 'Não iniciado').length;
-        ws.addRow([ut, conc, naoc, naoi]);
-        currentRow++;
-    });
-    
-    // Dados prontos para criação manual de gráfico de barras empilhadas no Excel
-    
-    currentRow += 2;
-    
-    // === SEÇÃO 6: STATUS POR UT - MATEMÁTICA ===
-    ws.mergeCells(`A${currentRow}:E${currentRow}`);
-    ws.getCell(`A${currentRow}`).value = 'STATUS POR UNIDADE - MATEMÁTICA';
-    ws.getCell(`A${currentRow}`).font = { bold: true, size: 14, color: { argb: 'FFf7941d' } };
-    ws.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
-    currentRow += 2;
-    
-    const matStackStart = currentRow;
-    ws.addRow(['Unidade', 'Concluído', 'Não Concluído', 'Não Iniciado']);
-    ws.getRow(currentRow).font = { bold: true };
-    ws.getRow(currentRow).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFDBEAFE' }
-    };
-    currentRow++;
-    
-    uts.forEach(ut => {
-        const conc = matData.filter(d => d[ut] === 'Concluído').length;
-        const naoc = matData.filter(d => d[ut] === 'Não concluído').length;
-        const naoi = matData.filter(d => (d[ut] || 'Não iniciado') === 'Não iniciado').length;
-        ws.addRow([ut, conc, naoc, naoi]);
-        currentRow++;
-    });
-    
-    // Dados prontos para criação manual de gráfico de barras empilhadas no Excel
-    
-    // Larguras das colunas
-    ws.getColumn(1).width = 20;
-    ws.getColumn(2).width = 15;
-    ws.getColumn(3).width = 15;
-    ws.getColumn(4).width = 15;
-    ws.getColumn(5).width = 15;
-}
 
-function getStatsForExcel(data, uts) {
-    const res = { "Concluído": 0, "Não concluído": 0, "Não iniciado": 0, total: 0 };
-    data.forEach(r => {
-        uts.forEach(u => {
-            const status = r[u] || 'Não iniciado';
-            if(res[status] !== undefined) {
-                res[status]++;
-                res.total++;
-            }
-        });
+    const r1 = ws.addRow(['Total de Matrículas', portData.length, matData.length, portData.length + matData.length]);
+    const r2 = ws.addRow(['Média de Idade', avgPort, avgMat, avgTotal]);
+    [r1, r2].forEach(r => { r.alignment = { horizontal: 'center' }; curRow++; });
+    
+    curRow += 2;
+
+    const titles = [
+        { label: 'VISÃO GERAL: PORTUGUÊS', col: 1, color: 'FF004A8D' },
+        { label: 'VISÃO GERAL: MATEMÁTICA', col: 6, color: 'FFF7941D' }
+    ];
+
+    titles.forEach(t => {
+        const cell = ws.getCell(curRow, t.col);
+        ws.mergeCells(curRow, t.col, curRow, t.col + 3);
+        cell.value = t.label;
+        cell.font = { bold: true, color: { argb: t.color } };
+        cell.alignment = { horizontal: 'center' };
     });
-    return res;
+
+    curRow++;
+    ws.addImage(wb.addImage({ base64: imgs.piePort, extension: 'png' }), { tl: { col: 0, row: curRow - 1 }, ext: { width: 500, height: 380 } });
+    ws.addImage(wb.addImage({ base64: imgs.pieMat, extension: 'png' }), { tl: { col: 5, row: curRow - 1 }, ext: { width: 500, height: 380 } });
+
+    curRow += 21;
+
+    const barTitles = [
+        { label: 'STATUS POR UNIDADE: PORTUGUÊS', col: 1, color: 'FF004A8D' },
+        { label: 'STATUS POR UNIDADE: MATEMÁTICA', col: 6, color: 'FFF7941D' }
+    ];
+
+    barTitles.forEach(t => {
+        const cell = ws.getCell(curRow, t.col);
+        ws.mergeCells(curRow, t.col, curRow, t.col + 3);
+        cell.value = t.label;
+        cell.font = { bold: true, color: { argb: t.color } };
+        cell.alignment = { horizontal: 'center' };
+    });
+
+    curRow++;
+    ws.addImage(wb.addImage({ base64: imgs.statusPort, extension: 'png' }), { tl: { col: 0, row: curRow - 1 }, ext: { width: 500, height: 350 } });
+    ws.addImage(wb.addImage({ base64: imgs.statusMat, extension: 'png' }), { tl: { col: 5, row: curRow - 1 }, ext: { width: 500, height: 350 } });
 }
